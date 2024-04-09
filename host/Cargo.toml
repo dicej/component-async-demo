@@ -1,0 +1,12 @@
+[package]
+name = "host"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.81"
+clap = { version = "4.5.4", features = ["derive"] }
+clap_derive = "4.5.4"
+tokio = { version = "1.36.0", features = ["fs", "process", "macros", "rt-multi-thread", "time"] }
+wasmtime = { git = "https://github.com/dicej/wasmtime", branch = "async" }
+wasmtime-wasi = { git = "https://github.com/dicej/wasmtime", branch = "async" }
