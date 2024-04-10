@@ -12,6 +12,9 @@ use {
     wasmtime_wasi::{command, WasiCtx, WasiCtxBuilder, WasiView},
 };
 
+// TODO: use `wasmtime-wit-bindgen` once it's updated to (optionally) use `LinkerInstance::func_wrap_concurrent`
+// and possibly `TypedFunc::call_concurrent`.
+
 // mod bindings {
 //     wasmtime::component::bindgen!({
 //         path: "../wit",
@@ -75,7 +78,7 @@ async fn main() -> Result<()> {
 
     fn for_any<F, R, T>(fun: F) -> F
     where
-        F: FnOnce(StoreContextMut<T>) -> Result<R> + 'static,
+        F: FnOnce(StoreContextMut<T>) -> R + 'static,
         R: 'static,
     {
         fun

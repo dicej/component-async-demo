@@ -1,6 +1,6 @@
 #![deny(warnings)]
 
-#[allow(warnings)]
+#[allow(warnings)] // TODO: fix `wit-bindgen`-generated warnings so this isn't necessary
 mod bindings {
     wit_bindgen::generate!({
         path: "../wit",
