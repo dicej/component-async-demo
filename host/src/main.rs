@@ -27,6 +27,8 @@ use {
 #[command(version, about)]
 struct Cli {
     component: PathBuf,
+    input: String,
+    expected_output: String,
 }
 
 struct Ctx {
@@ -116,12 +118,9 @@ async fn main() -> Result<()> {
         .ok_or_else(|| anyhow!("`local:local/baz` not found"))?
         .typed_func::<_, (String,)>("foo")?;
 
-    let (value,) = export.call_async(&mut store, ("hello, world!",)).await?;
+    let (value,) = export.call_async(&mut store, (cli.input,)).await?;
 
-    assert_eq!(
-        "hello, world! - entered guest - entered host - exited host - exited guest",
-        &value
-    );
+    assert_eq!(&cli.expected_output, &value);
 
     println!("success!");
 
