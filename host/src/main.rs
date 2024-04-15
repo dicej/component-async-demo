@@ -66,6 +66,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let mut config = Config::new();
+    config.cranelift_debug_verifier(true);
     config.wasm_component_model(true);
     config.async_support(true);
 

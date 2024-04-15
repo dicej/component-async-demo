@@ -56,4 +56,4 @@ cargo run --manifest-path host/Cargo.toml -- composed.wasm \
     'hello, world! - entered guest - entered guest - entered host - exited host - exited guest - exited guest'
 ```
 
-Okay, so that doesn't work yet -- stay tuned!
+Again, you should see "success!".
