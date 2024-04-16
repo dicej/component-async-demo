@@ -219,7 +219,7 @@ mod test {
             &a_file,
             &Config {
                 dir: dir.path().to_owned(),
-                definitions: vec![a_file.to_owned()],
+                definitions: vec![b_file.to_owned()],
                 ..Default::default()
             },
         )
@@ -248,9 +248,22 @@ mod test {
 
     #[tokio::test]
     async fn guest_async_async() -> Result<()> {
-        let component = &build_rust_component("guest_async").await?;
+        let guest_async = &build_rust_component("guest_async").await?;
         test(
-            &compose(component, component).await?,
+            &compose(guest_async, guest_async).await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered guest - entered host \
+             - exited host - exited guest - exited guest",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn guest_sync_async() -> Result<()> {
+        let guest_sync = &build_rust_component("guest_sync").await?;
+        let guest_async = &build_rust_component("guest_async").await?;
+        test(
+            &compose(guest_sync, guest_async).await?,
             "hello, world!",
             "hello, world! - entered guest - entered guest - entered host \
              - exited host - exited guest - exited guest",
