@@ -61,10 +61,7 @@ impl WasiView for Ctx {
 //     }
 // }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let cli = Cli::parse();
-
+async fn test(component: &[u8], input: &str, expected_output: &str) -> Result<()> {
     let mut config = Config::new();
     config.cranelift_debug_verifier(true);
     config.wasm_component_model(true);
@@ -72,7 +69,7 @@ async fn main() -> Result<()> {
 
     let engine = Engine::new(&config)?;
 
-    let component = Component::new(&engine, fs::read(&cli.component).await?)?;
+    let component = Component::new(&engine, component)?;
 
     let mut linker = Linker::new(&engine);
 
@@ -119,11 +116,145 @@ async fn main() -> Result<()> {
         .ok_or_else(|| anyhow!("`local:local/baz` not found"))?
         .typed_func::<_, (String,)>("foo")?;
 
-    let (value,) = export.call_async(&mut store, (cli.input,)).await?;
+    let (value,) = export.call_async(&mut store, (input.to_owned(),)).await?;
 
-    assert_eq!(&cli.expected_output, &value);
+    assert_eq!(expected_output, &value);
+
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    test(
+        &fs::read(&cli.component).await?,
+        &cli.input,
+        &cli.expected_output,
+    )
+    .await?;
 
     println!("success!");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use {
+        super::test,
+        anyhow::Result,
+        tokio::{fs, process::Command, sync::OnceCell},
+        wasm_compose::{composer::ComponentComposer, config::Config},
+        wit_component::ComponentEncoder,
+    };
+
+    async fn build_rust_component(name: &str) -> Result<Vec<u8>> {
+        static BUILD: OnceCell<()> = OnceCell::const_new();
+
+        BUILD
+            .get_or_init(|| async {
+                assert!(
+                    Command::new("cargo")
+                        .args([
+                            "build",
+                            "--release",
+                            "--workspace",
+                            "--exclude",
+                            "host",
+                            "--target",
+                            "wasm32-wasi"
+                        ])
+                        .status()
+                        .await
+                        .unwrap()
+                        .success(),
+                    "cargo build failed"
+                );
+            })
+            .await;
+
+        const ADAPTER_PATH: &str = "../target/wasi_snapshot_preview1.reactor.wasm";
+
+        static ADAPTER: OnceCell<()> = OnceCell::const_new();
+
+        ADAPTER
+            .get_or_init(|| async {
+                let adapter_url = "https://github.com/bytecodealliance/wasmtime/releases\
+                                   /download/v19.0.2/wasi_snapshot_preview1.reactor.wasm";
+
+                if !fs::try_exists(ADAPTER_PATH).await.unwrap() {
+                    fs::write(
+                        ADAPTER_PATH,
+                        reqwest::get(adapter_url)
+                            .await
+                            .unwrap()
+                            .bytes()
+                            .await
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                }
+            })
+            .await;
+
+        ComponentEncoder::default()
+            .validate(true)
+            .module(&fs::read(format!("../target/wasm32-wasi/release/{name}.wasm")).await?)?
+            .adapter("wasi_snapshot_preview1", &fs::read(ADAPTER_PATH).await?)?
+            .encode()
+    }
+
+    async fn compose(a: &[u8], b: &[u8]) -> Result<Vec<u8>> {
+        let dir = tempfile::tempdir()?;
+
+        let a_file = dir.path().join("a.wasm");
+        fs::write(&a_file, a).await?;
+
+        let b_file = dir.path().join("b.wasm");
+        fs::write(&b_file, b).await?;
+
+        ComponentComposer::new(
+            &a_file,
+            &Config {
+                dir: dir.path().to_owned(),
+                definitions: vec![a_file.to_owned()],
+                ..Default::default()
+            },
+        )
+        .compose()
+    }
+
+    #[tokio::test]
+    async fn guest_async() -> Result<()> {
+        test(
+            &build_rust_component("guest_async").await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered host - exited host - exited guest",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn guest_sync() -> Result<()> {
+        test(
+            &build_rust_component("guest_sync").await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered host - exited host - exited guest",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn guest_async_async() -> Result<()> {
+        let component = &build_rust_component("guest_async").await?;
+        test(
+            &compose(component, component).await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered guest - entered host \
+             - exited host - exited guest - exited guest",
+        )
+        .await
+    }
 }

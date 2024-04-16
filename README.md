@@ -16,7 +16,7 @@ Once you have the above, you can install the temporary fork of `wasm-tools` and 
 
 ```
 cargo install --locked --git https://github.com/dicej/wasm-tools --branch async wasm-tools
-curl -LO https://github.com/bytecodealliance/wasmtime/releases/download/v19.0.1/wasi_snapshot_preview1.reactor.wasm
+curl -LO https://github.com/bytecodealliance/wasmtime/releases/download/v19.0.2/wasi_snapshot_preview1.reactor.wasm
 ```
 
 ### Simple case
@@ -35,10 +35,10 @@ This will build the guest component using the `wit-bindgen` and `wasm-tools`
 forks and then run it using the `wasmtime` fork:
 
 ```
-cargo build --release --target wasm32-wasi --manifest-path guest/Cargo.toml
+cargo build --release --target wasm32-wasi --manifest-path guest-async/Cargo.toml
 wasm-tools component new --adapt wasi_snapshot_preview1.reactor.wasm \
-    guest/target/wasm32-wasi/release/round_trip.wasm -o round-trip.wasm
-cargo run --manifest-path host/Cargo.toml -- round-trip.wasm \
+    target/wasm32-wasi/release/guest_async.wasm -o guest-async.wasm
+cargo run --manifest-path host/Cargo.toml -- guest-async.wasm \
     'hello, world!' \
     'hello, world! - entered guest - entered host - exited host - exited guest'
 ```
@@ -50,7 +50,7 @@ That last command should print "success!".  If it doesn't, that's bad.
 Now we'll compose the guest component with itself and run the result:
 
 ```
-wasm-tools compose round-trip.wasm -d round-trip.wasm -o composed.wasm
+wasm-tools compose guest-async.wasm -d guest-async.wasm -o composed.wasm
 cargo run --manifest-path host/Cargo.toml -- composed.wasm \
     'hello, world!' \
     'hello, world! - entered guest - entered guest - entered host - exited host - exited guest - exited guest'
