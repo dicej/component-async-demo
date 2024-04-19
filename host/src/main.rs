@@ -291,4 +291,16 @@ mod test {
         )
         .await
     }
+
+    #[tokio::test]
+    async fn guest_sync_sync() -> Result<()> {
+        let guest_sync = &build_rust_component("guest_sync").await?;
+        test(
+            &compose(guest_sync, guest_sync).await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered guest - entered host \
+             - exited host - exited guest - exited guest",
+        )
+        .await
+    }
 }
