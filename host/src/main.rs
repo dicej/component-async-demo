@@ -144,12 +144,20 @@ mod test {
     use {
         super::test,
         anyhow::Result,
+        std::sync::Once,
         tokio::{fs, process::Command, sync::OnceCell},
         wasm_compose::{composer::ComponentComposer, config::Config},
         wit_component::ComponentEncoder,
     };
 
+    fn init_logger() {
+        static ONCE: Once = Once::new();
+        ONCE.call_once(pretty_env_logger::init);
+    }
+
     async fn build_rust_component(name: &str) -> Result<Vec<u8>> {
+        init_logger();
+
         static BUILD: OnceCell<()> = OnceCell::const_new();
 
         BUILD
@@ -264,6 +272,19 @@ mod test {
         let guest_async = &build_rust_component("guest_async").await?;
         test(
             &compose(guest_sync, guest_async).await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered guest - entered host \
+             - exited host - exited guest - exited guest",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn guest_async_sync() -> Result<()> {
+        let guest_async = &build_rust_component("guest_async").await?;
+        let guest_sync = &build_rust_component("guest_sync").await?;
+        test(
+            &compose(guest_async, guest_sync).await?,
             "hello, world!",
             "hello, world! - entered guest - entered guest - entered host \
              - exited host - exited guest - exited guest",
