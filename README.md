@@ -57,3 +57,13 @@ cargo run --manifest-path host/Cargo.toml -- composed.wasm \
 ```
 
 Again, you should see "success!".
+
+### Running the tests
+
+[host/src/main.rs](./host/src/main.rs) contains tests covering additional scenarios besides the
+above, including all composition combinations: sync->sync, sync->async,
+async->sync, and async->async.
+
+```
+cargo test
+```
