@@ -1,0 +1,9 @@
+[package]
+name = "wasi-http-draft"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.80"
+futures = "0.3.30"
+wasmtime = { git = "https://github.com/dicej/wasmtime", branch = "async" }

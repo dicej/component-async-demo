@@ -38,7 +38,7 @@ forks and then run it using the `wasmtime` fork:
 cargo build --release --target wasm32-wasi --manifest-path guest-async/Cargo.toml
 wasm-tools component new --adapt wasi_snapshot_preview1.reactor.wasm \
     target/wasm32-wasi/release/guest_async.wasm -o guest-async.wasm
-cargo run --manifest-path host/Cargo.toml -- guest-async.wasm \
+cargo run --manifest-path host/Cargo.toml -- round-trip guest-async.wasm \
     'hello, world!' \
     'hello, world! - entered guest - entered host - exited host - exited guest'
 ```
@@ -51,7 +51,7 @@ Now we'll compose the guest component with itself and run the result:
 
 ```
 wasm-tools compose guest-async.wasm -d guest-async.wasm -o composed.wasm
-cargo run --manifest-path host/Cargo.toml -- composed.wasm \
+cargo run --manifest-path host/Cargo.toml -- round-trip composed.wasm \
     'hello, world!' \
     'hello, world! - entered guest - entered guest - entered host - exited host - exited guest - exited guest'
 ```
