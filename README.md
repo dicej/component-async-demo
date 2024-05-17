@@ -68,8 +68,9 @@ result.
 
 [host/src/main.rs](./host/src/main.rs) contains tests covering additional
 scenarios besides the above, including all async/sync composition combinations.
-The [http-echo](./http-echo/src/lib.rs) test exercises `future`s, `stream`s, and
-post-return asynchronous execution.
+The [http-echo](./http-echo/src/lib.rs) and
+[middleware](./middleware/src/lib.rs) tests demonstrate how to use `future`s,
+`stream`s, and post-return asynchronous execution via the `spawn` function.
 
 ```
 cargo test
