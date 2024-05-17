@@ -342,7 +342,15 @@ mod test {
         }
     }
 
-    async fn test_http_echo(component: &[u8]) -> Result<()> {
+    async fn test_http_echo(component: &[u8], use_compression: bool) -> Result<()> {
+        use {
+            flate2::{
+                write::{DeflateDecoder, DeflateEncoder},
+                Compression,
+            },
+            std::io::Write,
+        };
+
         let mut config = Config::new();
         config.cranelift_debug_verifier(true);
         config.wasm_component_model(true);
@@ -374,7 +382,16 @@ mod test {
         let request_body_rx = {
             let (mut request_body_tx, request_body_rx) = component::stream(&mut store)?;
 
-            request_body_tx.send(&mut store, body.to_vec())?;
+            request_body_tx.send(
+                &mut store,
+                if use_compression {
+                    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::fast());
+                    encoder.write_all(body)?;
+                    encoder.finish()?
+                } else {
+                    body.to_vec()
+                },
+            )?;
             request_body_tx.close(&mut store)?;
 
             request_body_rx
@@ -397,7 +414,20 @@ mod test {
             scheme: Some(Scheme::Http),
             path_with_query: Some("/".into()),
             authority: Some("localhost".into()),
-            headers: Fields(headers.to_vec()),
+            headers: Fields(
+                headers
+                    .iter()
+                    .cloned()
+                    .chain(if use_compression {
+                        vec![
+                            ("content-encoding".into(), b"deflate".into()),
+                            ("accept-encoding".into(), b"deflate".into()),
+                        ]
+                    } else {
+                        Vec::new()
+                    })
+                    .collect(),
+            ),
             body: Body {
                 stream: Some(request_body_rx),
                 trailers: Some(request_trailers_rx),
@@ -432,6 +462,19 @@ mod test {
             }
         }
 
+        let response_body = if use_compression {
+            assert!(response.headers.0.iter().any(|(k, v)| matches!(
+                (k.as_str(), v.as_slice()),
+                ("content-encoding", b"deflate")
+            )));
+
+            let mut decoder = DeflateDecoder::new(Vec::new());
+            decoder.write_all(&response_body)?;
+            decoder.finish()?
+        } else {
+            response_body
+        };
+
         assert_eq!(body as &[_], &response_body);
 
         let response_trailers = response.body.trailers.take().unwrap().receive(&mut store)?;
@@ -454,6 +497,13 @@ mod test {
 
     #[tokio::test]
     async fn http_echo() -> Result<()> {
-        test_http_echo(&build_rust_component("http_echo").await?).await
+        test_http_echo(&build_rust_component("http_echo").await?, false).await
+    }
+
+    #[tokio::test]
+    async fn middleware() -> Result<()> {
+        let http_echo = &build_rust_component("http_echo").await?;
+        let middleware = &build_rust_component("middleware").await?;
+        test_http_echo(&compose(middleware, http_echo).await?, true).await
     }
 }
