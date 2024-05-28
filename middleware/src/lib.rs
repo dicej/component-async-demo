@@ -118,9 +118,9 @@ impl Handler for Component {
         }
 
         let body = if accept_deflated {
-            // Spawn another task; this one is to pipe (and optionally encode) the original response body and
-            // trailers into a new response we'll create below.  This will run concurrently with the caller's code
-            // (i.e. it won't necessarily complete before we return a value).
+            // Spawn another task; this one is to pipe and encode the original response body and trailers into a
+            // new response we'll create below.  This will run concurrently with the caller's code (i.e. it won't
+            // necessarily complete before we return a value).
             let (trailers_tx, trailers_rx) = async_support::new_future();
             let (mut pipe_tx, pipe_rx) = async_support::new_stream();
 

@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "guest-async",
   "guest-sync",
+  "guest-wait",  
   "http-echo",
   "host",
   "http",
