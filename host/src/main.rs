@@ -306,6 +306,80 @@ mod test {
         .await
     }
 
+    #[tokio::test]
+    async fn guest_wait() -> Result<()> {
+        test_round_trip(
+            &build_rust_component("guest_wait").await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered host - exited host - exited guest",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn guest_wait_wait() -> Result<()> {
+        let guest_wait = &build_rust_component("guest_wait").await?;
+        test_round_trip(
+            &compose(guest_wait, guest_wait).await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered guest - entered host \
+             - exited host - exited guest - exited guest",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn guest_sync_wait() -> Result<()> {
+        let guest_sync = &build_rust_component("guest_sync").await?;
+        let guest_wait = &build_rust_component("guest_wait").await?;
+        test_round_trip(
+            &compose(guest_sync, guest_wait).await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered guest - entered host \
+             - exited host - exited guest - exited guest",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn guest_wait_sync() -> Result<()> {
+        let guest_wait = &build_rust_component("guest_wait").await?;
+        let guest_sync = &build_rust_component("guest_sync").await?;
+        test_round_trip(
+            &compose(guest_wait, guest_sync).await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered guest - entered host \
+             - exited host - exited guest - exited guest",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn guest_async_wait() -> Result<()> {
+        let guest_async = &build_rust_component("guest_async").await?;
+        let guest_wait = &build_rust_component("guest_wait").await?;
+        test_round_trip(
+            &compose(guest_async, guest_wait).await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered guest - entered host \
+             - exited host - exited guest - exited guest",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn guest_wait_async() -> Result<()> {
+        let guest_wait = &build_rust_component("guest_wait").await?;
+        let guest_async = &build_rust_component("guest_async").await?;
+        test_round_trip(
+            &compose(guest_wait, guest_async).await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered guest - entered host \
+             - exited host - exited guest - exited guest",
+        )
+        .await
+    }
+
     mod proxy {
         wasmtime::component::bindgen!({
             path: "../wit",
