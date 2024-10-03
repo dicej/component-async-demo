@@ -9,13 +9,14 @@ use {
         component::{self, Component, Linker, ResourceTable},
         Config, Engine, Store, StoreContextMut,
     },
-    wasmtime_wasi::{command, WasiCtx, WasiCtxBuilder, WasiView},
+    wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView},
 };
 
 #[allow(warnings)]
 mod round_trip {
     wasmtime::component::bindgen!({
         debug: true,
+        trappable_imports: true,
         path: "../wit",
         world: "round-trip",
         async: concurrent
@@ -45,6 +46,8 @@ enum Command {
 struct Ctx {
     wasi: WasiCtx,
     table: ResourceTable,
+    #[allow(unused)]
+    drop_count: usize,
 }
 
 impl WasiView for Ctx {
@@ -57,6 +60,8 @@ impl WasiView for Ctx {
 }
 
 impl round_trip::local::local::baz::Host for Ctx {
+    type Data = Ctx;
+
     #[allow(clippy::manual_async_fn)]
     fn foo(
         _: StoreContextMut<'_, Self>,
@@ -86,7 +91,7 @@ async fn test_round_trip(component: &[u8], input: &str, expected_output: &str) -
 
     let mut linker = Linker::new(&engine);
 
-    command::add_to_linker(&mut linker)?;
+    wasmtime_wasi::add_to_linker_async(&mut linker)?;
     round_trip::RoundTrip::add_to_linker(&mut linker, |ctx| ctx)?;
 
     let mut store = Store::new(
@@ -94,10 +99,11 @@ async fn test_round_trip(component: &[u8], input: &str, expected_output: &str) -
         Ctx {
             wasi: WasiCtxBuilder::new().inherit_stdio().build(),
             table: ResourceTable::default(),
+            drop_count: 0,
         },
     );
 
-    let (round_trip, _) =
+    let round_trip =
         round_trip::RoundTrip::instantiate_async(&mut store, &component, &linker).await?;
 
     let value = round_trip
@@ -136,7 +142,7 @@ mod test {
     use {
         super::{test_round_trip, Ctx},
         anyhow::{anyhow, Result},
-        std::{future::Future, sync::Once},
+        std::{future::Future, sync::Once, time::Duration},
         tokio::{fs, process::Command, sync::OnceCell},
         wasi_http_draft::{
             wasi::http::types::{Body, ErrorCode, Method, Request, Response, Scheme},
@@ -436,7 +442,7 @@ mod test {
 
         let mut linker = Linker::new(&engine);
 
-        command::add_to_linker(&mut linker)?;
+        wasmtime_wasi::add_to_linker_async(&mut linker)?;
         wasi_http_draft::add_to_linker(&mut linker)?;
 
         let mut store = Store::new(
@@ -444,6 +450,7 @@ mod test {
             Ctx {
                 wasi: WasiCtxBuilder::new().inherit_stdio().build(),
                 table: ResourceTable::default(),
+                drop_count: 0,
             },
         );
 
@@ -579,5 +586,41 @@ mod test {
         let http_echo = &build_rust_component("http_echo").await?;
         let middleware = &build_rust_component("middleware").await?;
         test_http_echo(&compose(middleware, http_echo).await?, true).await
+    }
+
+    impl HostFoo for Ctx {
+        #[allow(clippy::manual_async_fn)]
+        fn new(
+            _: StoreContextMut<'_, Self>,
+            _: String,
+        ) -> impl Future<
+            Output = impl FnOnce(StoreContextMut<'_, Self>) -> wasmtime::Result<Resource<Foo>> + 'static,
+        > + Send
+               + 'static {
+            async move {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                component::for_any(move |mut store: StoreContextMut<'_, Self>| {
+                    Ok(WasiView::table(store.data_mut()).push(Foo)?)
+                })
+            }
+        }
+
+        #[allow(clippy::manual_async_fn)]
+        fn drop(
+            _: StoreContextMut<'_, Self>,
+            foo: Resource<Foo>,
+        ) -> impl Future<
+            Output = impl FnOnce(StoreContextMut<'_, Self>) -> wasmtime::Result<()> + 'static,
+        > + Send
+               + 'static {
+            async move {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                component::for_any(move |mut store: StoreContextMut<'_, Self>| {
+                    WasiView::table(store.data_mut()).delete(foo)?;
+                    store.data_mut().drop_count += 1;
+                    Ok(())
+                })
+            }
+        }
     }
 }

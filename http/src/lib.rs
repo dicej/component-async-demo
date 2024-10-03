@@ -1,6 +1,7 @@
 #![deny(warnings)]
 
 wasmtime::component::bindgen!({
+    trappable_imports: true,
     path: "../wit",
     interfaces: "
       import wasi:http/types@0.3.0-draft;
@@ -45,20 +46,68 @@ impl fmt::Display for Scheme {
     }
 }
 
-pub trait WasiHttpView: Send + Sized + 'static {
+pub trait WasiHttpView: Send + Sized {
+    type Data;
+
     fn table(&mut self) -> &mut ResourceTable;
 
     fn send_request(
-        store: StoreContextMut<'_, Self>,
+        store: StoreContextMut<'_, Self::Data>,
         request: Resource<Request>,
     ) -> impl Future<
         Output = impl FnOnce(
-            StoreContextMut<'_, Self>,
+            StoreContextMut<'_, Self::Data>,
         ) -> wasmtime::Result<Result<Resource<Response>, ErrorCode>>
                      + 'static,
     > + Send
            + Sync
            + 'static;
+}
+
+impl<T: WasiHttpView> WasiHttpView for &mut T {
+    type Data = T::Data;
+
+    fn table(&mut self) -> &mut ResourceTable {
+        (*self).table()
+    }
+
+    fn send_request(
+        store: StoreContextMut<'_, Self::Data>,
+        request: Resource<Request>,
+    ) -> impl Future<
+        Output = impl FnOnce(
+            StoreContextMut<'_, Self::Data>,
+        ) -> wasmtime::Result<Result<Resource<Response>, ErrorCode>>
+                     + 'static,
+    > + Send
+           + Sync
+           + 'static {
+        T::send_request(store, request)
+    }
+}
+
+pub struct WasiHttpImpl<T>(pub T);
+
+impl<T: WasiHttpView> WasiHttpView for WasiHttpImpl<T> {
+    type Data = T::Data;
+
+    fn table(&mut self) -> &mut ResourceTable {
+        self.0.table()
+    }
+
+    fn send_request(
+        store: StoreContextMut<'_, Self::Data>,
+        request: Resource<Request>,
+    ) -> impl Future<
+        Output = impl FnOnce(
+            StoreContextMut<'_, Self::Data>,
+        ) -> wasmtime::Result<Result<Resource<Response>, ErrorCode>>
+                     + 'static,
+    > + Send
+           + Sync
+           + 'static {
+        T::send_request(store, request)
+    }
 }
 
 pub struct Body {
@@ -92,7 +141,7 @@ pub struct Response {
     pub body: Body,
 }
 
-impl<T: WasiHttpView> wasi::http::types::HostFields for T {
+impl<T: WasiHttpView> wasi::http::types::HostFields for WasiHttpImpl<T> {
     fn new(&mut self) -> wasmtime::Result<Resource<Fields>> {
         Ok(self.table().push(Fields(Vec::new()))?)
     }
@@ -171,7 +220,12 @@ impl<T: WasiHttpView> wasi::http::types::HostFields for T {
     }
 }
 
-impl<T: WasiHttpView> wasi::http::types::HostBody for T {
+impl<T: WasiHttpView> wasi::http::types::HostBody for WasiHttpImpl<T>
+where
+    T::Data: WasiHttpView,
+{
+    type Data = T::Data;
+
     fn new(
         &mut self,
         stream: StreamReceiver<u8>,
@@ -193,11 +247,11 @@ impl<T: WasiHttpView> wasi::http::types::HostBody for T {
     }
 
     fn finish(
-        mut store: StoreContextMut<'_, Self>,
+        mut store: StoreContextMut<'_, Self::Data>,
         this: Resource<Body>,
     ) -> impl Future<
         Output = impl FnOnce(
-            StoreContextMut<'_, Self>,
+            StoreContextMut<'_, Self::Data>,
         )
             -> wasmtime::Result<Result<Option<Resource<Fields>>, ErrorCode>>
                      + 'static,
@@ -231,7 +285,7 @@ impl<T: WasiHttpView> wasi::http::types::HostBody for T {
     }
 }
 
-impl<T: WasiHttpView> wasi::http::types::HostRequest for T {
+impl<T: WasiHttpView> wasi::http::types::HostRequest for WasiHttpImpl<T> {
     fn new(
         &mut self,
         headers: Resource<Fields>,
@@ -348,7 +402,7 @@ impl<T: WasiHttpView> wasi::http::types::HostRequest for T {
     }
 }
 
-impl<T: WasiHttpView> wasi::http::types::HostResponse for T {
+impl<T: WasiHttpView> wasi::http::types::HostResponse for WasiHttpImpl<T> {
     fn new(
         &mut self,
         headers: Resource<Fields>,
@@ -403,7 +457,7 @@ impl<T: WasiHttpView> wasi::http::types::HostResponse for T {
     }
 }
 
-impl<T: WasiHttpView> wasi::http::types::HostRequestOptions for T {
+impl<T: WasiHttpView> wasi::http::types::HostRequestOptions for WasiHttpImpl<T> {
     fn new(&mut self) -> wasmtime::Result<Resource<RequestOptions>> {
         Ok(self.table().push(RequestOptions::default())?)
     }
@@ -459,7 +513,10 @@ impl<T: WasiHttpView> wasi::http::types::HostRequestOptions for T {
     }
 }
 
-impl<T: WasiHttpView> wasi::http::types::Host for T {
+impl<T: WasiHttpView> wasi::http::types::Host for WasiHttpImpl<T>
+where
+    T::Data: WasiHttpView,
+{
     fn http_error_code(
         &mut self,
         _error: wasmtime::component::Error,
@@ -468,13 +525,15 @@ impl<T: WasiHttpView> wasi::http::types::Host for T {
     }
 }
 
-impl<T: WasiHttpView> wasi::http::handler::Host for T {
+impl<T: WasiHttpView> wasi::http::handler::Host for WasiHttpImpl<T> {
+    type Data = T::Data;
+
     fn handle(
-        store: StoreContextMut<'_, Self>,
+        store: StoreContextMut<'_, Self::Data>,
         request: Resource<Request>,
     ) -> impl Future<
         Output = impl FnOnce(
-            StoreContextMut<'_, Self>,
+            StoreContextMut<'_, Self::Data>,
         ) -> wasmtime::Result<Result<Resource<Response>, ErrorCode>>
                      + 'static,
     > + Send
@@ -484,7 +543,24 @@ impl<T: WasiHttpView> wasi::http::handler::Host for T {
     }
 }
 
-pub fn add_to_linker<T: WasiHttpView>(linker: &mut Linker<T>) -> wasmtime::Result<()> {
-    wasi::http::types::add_to_linker(linker, |ctx| ctx)?;
-    wasi::http::handler::add_to_linker(linker, |ctx| ctx)
+pub fn add_to_linker<
+    T: WasiHttpView<Data = T>
+        + wasi::http::handler::Host<Data = T>
+        + wasi::http::types::Host<Data = T>
+        + 'static,
+>(
+    linker: &mut Linker<T>,
+) -> wasmtime::Result<()>
+where
+    <T as WasiHttpView>::Data: WasiHttpView,
+{
+    wasi::http::types::add_to_linker_get_host(linker, annotate_http(|ctx| WasiHttpImpl(ctx)))?;
+    wasi::http::handler::add_to_linker_get_host(linker, annotate_http(|ctx| WasiHttpImpl(ctx)))
+}
+
+fn annotate_http<T, F>(val: F) -> F
+where
+    F: Fn(&mut T) -> WasiHttpImpl<&mut T>,
+{
+    val
 }
