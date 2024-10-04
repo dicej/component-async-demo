@@ -224,7 +224,7 @@ impl<T: WasiHttpView> wasi::http::types::HostBody for WasiHttpImpl<T>
 where
     T::Data: WasiHttpView,
 {
-    type Data = T::Data;
+    type BodyData = T::Data;
 
     fn new(
         &mut self,
@@ -247,11 +247,11 @@ where
     }
 
     fn finish(
-        mut store: StoreContextMut<'_, Self::Data>,
+        mut store: StoreContextMut<'_, Self::BodyData>,
         this: Resource<Body>,
     ) -> impl Future<
         Output = impl FnOnce(
-            StoreContextMut<'_, Self::Data>,
+            StoreContextMut<'_, Self::BodyData>,
         )
             -> wasmtime::Result<Result<Option<Resource<Fields>>, ErrorCode>>
                      + 'static,
@@ -543,12 +543,7 @@ impl<T: WasiHttpView> wasi::http::handler::Host for WasiHttpImpl<T> {
     }
 }
 
-pub fn add_to_linker<
-    T: WasiHttpView<Data = T>
-        + wasi::http::handler::Host<Data = T>
-        + wasi::http::types::Host<Data = T>
-        + 'static,
->(
+pub fn add_to_linker<T: WasiHttpView<Data = T> + 'static>(
     linker: &mut Linker<T>,
 ) -> wasmtime::Result<()>
 where

@@ -15,7 +15,6 @@ use {
 #[allow(warnings)]
 mod round_trip {
     wasmtime::component::bindgen!({
-        debug: true,
         trappable_imports: true,
         path: "../wit",
         world: "round-trip",
@@ -142,7 +141,7 @@ mod test {
     use {
         super::{test_round_trip, Ctx},
         anyhow::{anyhow, Result},
-        std::{future::Future, sync::Once, time::Duration},
+        std::{future::Future, sync::Once},
         tokio::{fs, process::Command, sync::OnceCell},
         wasi_http_draft::{
             wasi::http::types::{Body, ErrorCode, Method, Request, Response, Scheme},
@@ -153,7 +152,7 @@ mod test {
             component::{self, Component, Linker, Resource, ResourceTable},
             AsContextMut, Config, Engine, Store, StoreContextMut,
         },
-        wasmtime_wasi::{command, WasiCtxBuilder, WasiView},
+        wasmtime_wasi::{WasiCtxBuilder, WasiView},
         wit_component::ComponentEncoder,
     };
 
@@ -390,7 +389,12 @@ mod test {
         wasmtime::component::bindgen!({
             path: "../wit",
             world: "wasi:http/proxy",
-            async: concurrent,
+            async: concurrent {
+                only_imports: [
+                    "wasi:http/types@0.3.0-draft#[static]body.finish",
+                    "wasi:http/handler@0.3.0-draft#handle",
+                ]
+            },
             with: {
                 "wasi:http/types": wasi_http_draft::wasi::http::types,
             }
@@ -398,17 +402,19 @@ mod test {
     }
 
     impl WasiHttpView for Ctx {
+        type Data = Ctx;
+
         fn table(&mut self) -> &mut ResourceTable {
             &mut self.table
         }
 
         #[allow(clippy::manual_async_fn)]
         fn send_request(
-            _store: StoreContextMut<'_, Self>,
+            _store: StoreContextMut<'_, Self::Data>,
             _request: Resource<Request>,
         ) -> impl Future<
             Output = impl FnOnce(
-                StoreContextMut<'_, Self>,
+                StoreContextMut<'_, Self::Data>,
             )
                 -> wasmtime::Result<Result<Resource<Response>, ErrorCode>>
                          + 'static,
@@ -454,7 +460,7 @@ mod test {
             },
         );
 
-        let (proxy, _) = proxy::Proxy::instantiate_async(&mut store, &component, &linker).await?;
+        let proxy = proxy::Proxy::instantiate_async(&mut store, &component, &linker).await?;
 
         let headers = [("foo".into(), b"bar".into())];
 
@@ -586,41 +592,5 @@ mod test {
         let http_echo = &build_rust_component("http_echo").await?;
         let middleware = &build_rust_component("middleware").await?;
         test_http_echo(&compose(middleware, http_echo).await?, true).await
-    }
-
-    impl HostFoo for Ctx {
-        #[allow(clippy::manual_async_fn)]
-        fn new(
-            _: StoreContextMut<'_, Self>,
-            _: String,
-        ) -> impl Future<
-            Output = impl FnOnce(StoreContextMut<'_, Self>) -> wasmtime::Result<Resource<Foo>> + 'static,
-        > + Send
-               + 'static {
-            async move {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-                component::for_any(move |mut store: StoreContextMut<'_, Self>| {
-                    Ok(WasiView::table(store.data_mut()).push(Foo)?)
-                })
-            }
-        }
-
-        #[allow(clippy::manual_async_fn)]
-        fn drop(
-            _: StoreContextMut<'_, Self>,
-            foo: Resource<Foo>,
-        ) -> impl Future<
-            Output = impl FnOnce(StoreContextMut<'_, Self>) -> wasmtime::Result<()> + 'static,
-        > + Send
-               + 'static {
-            async move {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-                component::for_any(move |mut store: StoreContextMut<'_, Self>| {
-                    WasiView::table(store.data_mut()).delete(foo)?;
-                    store.data_mut().drop_count += 1;
-                    Ok(())
-                })
-            }
-        }
     }
 }
