@@ -178,7 +178,7 @@ mod test {
                             "--exclude",
                             "wasi-http-draft",
                             "--target",
-                            "wasm32-wasi"
+                            "wasm32-wasip1"
                         ])
                         .status()
                         .await

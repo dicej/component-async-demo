@@ -266,11 +266,7 @@ where
         })();
         async move {
             let trailers = match trailers {
-                Ok(Some(trailers)) => Ok(if let Ok(trailers) = trailers.await {
-                    trailers
-                } else {
-                    None
-                }),
+                Ok(Some(trailers)) => Ok(trailers.await.unwrap_or_default()),
                 Ok(None) => Ok(None),
                 Err(e) => Err(e),
             };
