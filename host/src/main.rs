@@ -80,6 +80,7 @@ impl round_trip::local::local::baz::Host for Ctx {
 
 async fn test_round_trip(component: &[u8], input: &str, expected_output: &str) -> Result<()> {
     let mut config = Config::new();
+    config.debug_info(true);
     config.cranelift_debug_verifier(true);
     config.wasm_component_model(true);
     config.async_support(true);
@@ -216,7 +217,7 @@ mod test {
 
         ComponentEncoder::default()
             .validate(true)
-            .module(&fs::read(format!("../target/wasm32-wasi/debug/{name}.wasm")).await?)?
+            .module(&fs::read(format!("../target/wasm32-wasip1/debug/{name}.wasm")).await?)?
             .adapter("wasi_snapshot_preview1", &fs::read(ADAPTER_PATH).await?)?
             .encode()
     }
