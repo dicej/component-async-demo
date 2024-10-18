@@ -8,4 +8,22 @@ members = [
   "host",
   "http",
   "middleware",
+  "yield-caller",
+  "yield-callee"
 ]
+
+[patch."https://github.com/dicej/wasm-tools"]
+wasmparser = { path = "../wasm-tools/crates/wasmparser" }
+wasm-encoder = { path = "../wasm-tools/crates/wasm-encoder" }
+wasm-metadata = { path = "../wasm-tools/crates/wasm-metadata" }
+wit-parser = { path = "../wasm-tools/crates/wit-parser" }
+wit-component = { path = "../wasm-tools/crates/wit-component" }
+wasm-compose = { path = "../wasm-tools/crates/wasm-compose" }
+wasmprinter = { path = "../wasm-tools/crates/wasmprinter" }
+
+[patch."https://github.com/dicej/wit-bindgen"]
+wit-bindgen = { path = "../wit-bindgen/crates/guest-rust" }
+
+[patch."https://github.com/dicej/wasmtime"]
+wasmtime = { path = "../wasmtime/crates/wasmtime" }
+wasmtime-wasi = { path = "../wasmtime/crates/wasi" }

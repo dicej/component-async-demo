@@ -3,7 +3,13 @@
 use {
     anyhow::Result,
     clap::{Parser, Subcommand},
-    std::{future::Future, path::PathBuf, time::Duration},
+    std::{
+        future::Future,
+        path::PathBuf,
+        sync::{Arc, Mutex},
+        task::Waker,
+        time::Duration,
+    },
     tokio::fs,
     wasmtime::{
         component::{self, Component, Linker, ResourceTable},
@@ -47,6 +53,10 @@ struct Ctx {
     table: ResourceTable,
     #[allow(unused)]
     drop_count: usize,
+    #[allow(unused)]
+    wakers: Arc<Mutex<Option<Vec<Waker>>>>,
+    #[allow(unused)]
+    continue_: bool,
 }
 
 impl WasiView for Ctx {
@@ -100,6 +110,8 @@ async fn test_round_trip(component: &[u8], input: &str, expected_output: &str) -
             wasi: WasiCtxBuilder::new().inherit_stdio().build(),
             table: ResourceTable::default(),
             drop_count: 0,
+            continue_: false,
+            wakers: Arc::new(Mutex::new(None)),
         },
     );
 
@@ -142,7 +154,14 @@ mod test {
     use {
         super::{test_round_trip, Ctx},
         anyhow::{anyhow, Result},
-        std::{future::Future, sync::Once},
+        futures::future,
+        std::{
+            future::Future,
+            ops::DerefMut,
+            sync::Once,
+            sync::{Arc, Mutex},
+            task::Poll,
+        },
         tokio::{fs, process::Command, sync::OnceCell},
         wasi_http_draft::{
             wasi::http::types::{Body, ErrorCode, Method, Request, Response, Scheme},
@@ -386,6 +405,105 @@ mod test {
         .await
     }
 
+    mod yield_host {
+        wasmtime::component::bindgen!({
+            path: "../wit",
+            world: "yield-host",
+            async: concurrent {
+                only_imports: [
+                    "local:local/ready#when-ready",
+                ]
+            },
+        });
+    }
+
+    impl yield_host::local::local::continue_::Host for Ctx {
+        fn set_continue(&mut self, v: bool) {
+            self.continue_ = v;
+        }
+
+        fn get_continue(&mut self) -> bool {
+            self.continue_
+        }
+    }
+
+    impl yield_host::local::local::ready::Host for Ctx {
+        type Data = Ctx;
+
+        fn set_ready(&mut self, ready: bool) {
+            let mut wakers = self.wakers.lock().unwrap();
+            if ready {
+                if let Some(wakers) = wakers.take() {
+                    for waker in wakers {
+                        waker.wake();
+                    }
+                }
+            } else if wakers.is_none() {
+                *wakers = Some(Vec::new());
+            }
+        }
+
+        fn when_ready(
+            store: StoreContextMut<Self::Data>,
+        ) -> impl Future<Output = impl FnOnce(StoreContextMut<Self::Data>) + 'static>
+               + Send
+               + Sync
+               + 'static {
+            let wakers = store.data().wakers.clone();
+            future::poll_fn(move |cx| {
+                let mut wakers = wakers.lock().unwrap();
+                if let Some(wakers) = wakers.deref_mut() {
+                    wakers.push(cx.waker().clone());
+                    Poll::Pending
+                } else {
+                    Poll::Ready(component::for_any(|_| ()))
+                }
+            })
+        }
+    }
+
+    async fn test_yield(component: &[u8]) -> Result<()> {
+        let mut config = Config::new();
+        config.debug_info(true);
+        config.cranelift_debug_verifier(true);
+        config.wasm_component_model(true);
+        config.async_support(true);
+
+        let engine = Engine::new(&config)?;
+
+        let component = Component::new(&engine, component)?;
+
+        let mut linker = Linker::new(&engine);
+
+        wasmtime_wasi::add_to_linker_async(&mut linker)?;
+        yield_host::YieldHost::add_to_linker(&mut linker, |ctx| ctx)?;
+
+        let mut store = Store::new(
+            &engine,
+            Ctx {
+                wasi: WasiCtxBuilder::new().inherit_stdio().build(),
+                table: ResourceTable::default(),
+                drop_count: 0,
+                continue_: false,
+                wakers: Arc::new(Mutex::new(None)),
+            },
+        );
+
+        let yield_host =
+            yield_host::YieldHost::instantiate_async(&mut store, &component, &linker).await?;
+
+        yield_host.local_local_run().call_run(&mut store).await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn yield_() -> Result<()> {
+        let yield_caller = &build_rust_component("yield_caller").await?;
+        let yield_callee = &build_rust_component("yield_callee").await?;
+        test_yield(&compose(yield_caller, yield_callee).await?).await
+    }
+
     mod proxy {
         wasmtime::component::bindgen!({
             path: "../wit",
@@ -458,6 +576,8 @@ mod test {
                 wasi: WasiCtxBuilder::new().inherit_stdio().build(),
                 table: ResourceTable::default(),
                 drop_count: 0,
+                continue_: false,
+                wakers: Arc::new(Mutex::new(None)),
             },
         );
 

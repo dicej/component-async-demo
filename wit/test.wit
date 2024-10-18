@@ -1,0 +1,42 @@
+package local:local;
+
+interface baz {
+  foo: func(s: string) -> string;
+}
+
+world round-trip {
+  import baz;
+  export baz;
+}
+
+interface ready {
+  set-ready: func(ready: bool);
+  when-ready: func();
+}
+
+interface continue {
+  set-continue: func(continue: bool);
+  get-continue: func() -> bool;
+}
+
+interface run {
+  run: func();
+}
+
+world yield-caller {
+  import continue;
+  import ready;
+  import run;
+  export run;
+}
+
+world yield-callee {
+  import continue;
+  export run;
+}
+
+world yield-host {
+  import continue;
+  import ready;
+  export run;
+}
