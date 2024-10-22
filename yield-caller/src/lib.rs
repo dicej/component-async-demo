@@ -33,24 +33,19 @@ struct Component;
 
 impl Guest for Component {
     async fn run() {
-        eprintln!("yossa a");
         ready::set_ready(false);
         continue_::set_continue(true);
 
         let mut ready = Some(Box::pin(ready::when_ready()));
-        eprintln!("yossa b");
         let mut run = Some(Box::pin(run::run()));
-        eprintln!("yossa c");
         future::poll_fn(move |cx| {
-            eprintln!("yossa d");
-            let run_poll = run.as_mut().map(|v| v.as_mut().poll(cx));
-            eprintln!("yossa e");
             let ready_poll = ready.as_mut().map(|v| v.as_mut().poll(cx));
-            eprintln!("yossa f");
+            ready::set_ready(true);
+            let run_poll = run.as_mut().map(|v| v.as_mut().poll(cx));
 
             match (run_poll, ready_poll) {
                 (None | Some(Poll::Ready(())), None | Some(Poll::Ready(()))) => {
-                    return Poll::Ready(())
+                    return Poll::Ready(());
                 }
                 (Some(Poll::Ready(())), _) => run = None,
                 (_, Some(Poll::Ready(()))) => {
@@ -59,8 +54,6 @@ impl Guest for Component {
                 }
                 _ => {}
             }
-
-            ready::set_ready(true);
 
             Poll::Pending
         })

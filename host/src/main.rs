@@ -161,6 +161,7 @@ mod test {
             sync::Once,
             sync::{Arc, Mutex},
             task::Poll,
+            time::Duration,
         },
         tokio::{fs, process::Command, sync::OnceCell},
         wasi_http_draft::{
@@ -468,6 +469,7 @@ mod test {
         config.cranelift_debug_verifier(true);
         config.wasm_component_model(true);
         config.async_support(true);
+        config.epoch_interruption(true);
 
         let engine = Engine::new(&config)?;
 
@@ -488,6 +490,12 @@ mod test {
                 wakers: Arc::new(Mutex::new(None)),
             },
         );
+        store.set_epoch_deadline(1);
+
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(10));
+            engine.increment_epoch();
+        });
 
         let yield_host =
             yield_host::YieldHost::instantiate_async(&mut store, &component, &linker).await?;
