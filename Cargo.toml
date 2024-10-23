@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
+  "backpressure-callee",
+  "backpressure-caller",  
   "guest-async",
   "guest-sync",
   "guest-wait",
@@ -8,8 +10,9 @@ members = [
   "host",
   "http",
   "middleware",
+  "poll",  
+  "yield-callee",
   "yield-caller",
-  "yield-callee"
 ]
 
 [patch."https://github.com/dicej/wasm-tools"]

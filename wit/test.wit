@@ -23,6 +23,10 @@ interface run {
   run: func();
 }
 
+interface backpressure {
+  set-backpressure: func(enabled: bool);
+}
+
 world yield-caller {
   import continue;
   import ready;
@@ -38,5 +42,21 @@ world yield-callee {
 world yield-host {
   import continue;
   import ready;
+  export run;
+}
+
+world poll {
+  import ready;
+  export run;
+}
+
+world backpressure-caller {
+  import backpressure;
+  import run;
+  export run;
+}
+
+world backpressure-callee {
+  export backpressure;
   export run;
 }

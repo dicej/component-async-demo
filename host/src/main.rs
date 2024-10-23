@@ -463,7 +463,7 @@ mod test {
         }
     }
 
-    async fn test_yield(component: &[u8]) -> Result<()> {
+    async fn test_run(component: &[u8]) -> Result<()> {
         let mut config = Config::new();
         config.debug_info(true);
         config.cranelift_debug_verifier(true);
@@ -509,7 +509,20 @@ mod test {
     async fn yield_() -> Result<()> {
         let yield_caller = &build_rust_component("yield_caller").await?;
         let yield_callee = &build_rust_component("yield_callee").await?;
-        test_yield(&compose(yield_caller, yield_callee).await?).await
+        test_run(&compose(yield_caller, yield_callee).await?).await
+    }
+
+    #[tokio::test]
+    async fn poll() -> Result<()> {
+        let poll = &build_rust_component("poll").await?;
+        test_run(poll).await
+    }
+
+    #[tokio::test]
+    async fn backpressure() -> Result<()> {
+        let backpressure_caller = &build_rust_component("backpressure_caller").await?;
+        let backpressure_callee = &build_rust_component("backpressure_callee").await?;
+        test_run(&compose(backpressure_caller, backpressure_callee).await?).await
     }
 
     mod proxy {
