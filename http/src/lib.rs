@@ -27,7 +27,7 @@ use {
     std::{fmt, future::Future, mem},
     wasi::http::types::{ErrorCode, HeaderError, Method, RequestOptionsError, Scheme},
     wasmtime::{
-        component::{self, FutureReceiver, Linker, Resource, ResourceTable, StreamReceiver},
+        component::{self, FutureReader, Linker, Resource, ResourceTable, StreamReader},
         AsContextMut, StoreContextMut,
     },
 };
@@ -111,8 +111,8 @@ impl<T: WasiHttpView> WasiHttpView for WasiHttpImpl<T> {
 }
 
 pub struct Body {
-    pub stream: Option<StreamReceiver<u8>>,
-    pub trailers: Option<FutureReceiver<Resource<Fields>>>,
+    pub stream: Option<StreamReader<u8>>,
+    pub trailers: Option<FutureReader<Resource<Fields>>>,
 }
 
 #[derive(Clone)]
@@ -228,8 +228,8 @@ where
 
     fn new(
         &mut self,
-        stream: StreamReceiver<u8>,
-        trailers: Option<FutureReceiver<Resource<Fields>>>,
+        stream: StreamReader<u8>,
+        trailers: Option<FutureReader<Resource<Fields>>>,
     ) -> wasmtime::Result<Resource<Body>> {
         Ok(self.table().push(Body {
             stream: Some(stream),
@@ -237,7 +237,7 @@ where
         })?)
     }
 
-    fn stream(&mut self, this: Resource<Body>) -> wasmtime::Result<Result<StreamReceiver<u8>, ()>> {
+    fn stream(&mut self, this: Resource<Body>) -> wasmtime::Result<Result<StreamReader<u8>, ()>> {
         // TODO: This should return a child handle
         let stream = self.table().get_mut(&this)?.stream.take().ok_or_else(|| {
             anyhow!("todo: allow wasi:http/types#body.stream to be called multiple times")
@@ -260,9 +260,7 @@ where
            + 'static {
         let trailers = (|| {
             let trailers = store.data_mut().table().delete(this)?.trailers;
-            trailers
-                .map(|v| v.receive(store.as_context_mut()))
-                .transpose()
+            trailers.map(|v| v.read(store.as_context_mut())).transpose()
         })();
         async move {
             let trailers = match trailers {
