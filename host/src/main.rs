@@ -611,7 +611,7 @@ mod test {
         let request_body_rx = {
             let (mut request_body_tx, request_body_rx) = component::stream(&mut store)?;
 
-            request_body_tx.send(
+            request_body_tx.write(
                 &mut store,
                 if use_compression {
                     let mut encoder = DeflateEncoder::new(Vec::new(), Compression::fast());
@@ -633,7 +633,7 @@ mod test {
 
             let trailers = WasiView::table(store.data_mut()).push(Fields(trailers.clone()))?;
 
-            request_trailers_tx.send(&mut store, trailers)?;
+            request_trailers_tx.write(&mut store, trailers)?;
 
             request_trailers_rx
         };
@@ -683,7 +683,7 @@ mod test {
 
         let mut response_body = Vec::new();
         loop {
-            let rx = response_body_rx.receive(&mut store)?;
+            let rx = response_body_rx.read(&mut store)?;
             if let Ok(chunk) = store.as_context_mut().wait_until(rx).await? {
                 response_body.extend(chunk.unwrap());
             } else {
@@ -706,7 +706,7 @@ mod test {
 
         assert_eq!(body as &[_], &response_body);
 
-        let response_trailers = response.body.trailers.take().unwrap().receive(&mut store)?;
+        let response_trailers = response.body.trailers.take().unwrap().read(&mut store)?;
 
         let response_trailers = store
             .as_context_mut()

@@ -26,7 +26,7 @@ use {
         exports::wasi::http::handler::Guest as Handler,
         wasi::http::types::{Body, ErrorCode, Request, Response},
     },
-    futures::{SinkExt, TryStreamExt},
+    futures::{SinkExt, StreamExt},
 };
 
 struct Component;
@@ -47,14 +47,14 @@ impl Handler for Component {
 
             async_support::spawn(async move {
                 let mut body_rx = body.stream().unwrap();
-                while let Some(chunk) = body_rx.try_next().await.unwrap() {
+                while let Some(chunk) = body_rx.next().await {
                     pipe_tx.send(chunk).await.unwrap();
                 }
 
                 drop(pipe_tx);
 
                 if let Some(trailers) = Body::finish(body).await.unwrap() {
-                    trailers_tx.send(trailers).await.unwrap();
+                    trailers_tx.write(trailers).await;
                 }
             });
 
