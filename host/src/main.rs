@@ -93,6 +93,7 @@ async fn test_round_trip(component: &[u8], input: &str, expected_output: &str) -
     config.debug_info(true);
     config.cranelift_debug_verifier(true);
     config.wasm_component_model(true);
+    config.wasm_component_model_async(true);
     config.async_support(true);
 
     let engine = Engine::new(&config)?;
@@ -153,7 +154,7 @@ async fn main() -> Result<()> {
 mod test {
     use {
         super::{test_round_trip, Ctx},
-        anyhow::{anyhow, Result},
+        anyhow::{anyhow, Context, Result},
         futures::future,
         std::{
             future::Future,
@@ -169,6 +170,7 @@ mod test {
             Fields, WasiHttpView,
         },
         wasm_compose::composer::ComponentComposer,
+        wasmparser::{Validator, WasmFeatures},
         wasmtime::{
             component::{self, Component, Linker, Resource, ResourceTable},
             AsContextMut, Config, Engine, Store, StoreContextMut,
@@ -235,11 +237,21 @@ mod test {
             })
             .await;
 
-        ComponentEncoder::default()
-            .validate(true)
+        let component = ComponentEncoder::default()
+            .validate(false)
             .module(&fs::read(format!("../target/wasm32-wasip1/debug/{name}.wasm")).await?)?
             .adapter("wasi_snapshot_preview1", &fs::read(ADAPTER_PATH).await?)?
-            .encode()
+            .encode()?;
+
+        Validator::new_with_features(
+            WasmFeatures::WASM2
+                | WasmFeatures::COMPONENT_MODEL
+                | WasmFeatures::COMPONENT_MODEL_ASYNC,
+        )
+        .validate_all(&component)
+        .context("failed to validated component output")?;
+
+        Ok(component)
     }
 
     async fn compose(a: &[u8], b: &[u8]) -> Result<Vec<u8>> {
@@ -468,6 +480,7 @@ mod test {
         config.debug_info(true);
         config.cranelift_debug_verifier(true);
         config.wasm_component_model(true);
+        config.wasm_component_model_async(true);
         config.async_support(true);
         config.epoch_interruption(true);
 
@@ -580,6 +593,7 @@ mod test {
         let mut config = Config::new();
         config.cranelift_debug_verifier(true);
         config.wasm_component_model(true);
+        config.wasm_component_model_async(true);
         config.async_support(true);
 
         let engine = Engine::new(&config)?;

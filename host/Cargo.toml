@@ -19,4 +19,5 @@ pretty_env_logger = "0.5.0"
 reqwest = "0.12.3"
 tempfile = "3.10.1"
 wasm-compose = { git = "https://github.com/dicej/wasm-tools", branch = "async" }
+wasmparser = { git = "https://github.com/dicej/wasm-tools", branch = "async" }
 wit-component = { git = "https://github.com/dicej/wasm-tools", branch = "async" }
