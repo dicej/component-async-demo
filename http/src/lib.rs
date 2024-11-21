@@ -7,7 +7,8 @@ wasmtime::component::bindgen!({
       import wasi:http/types@0.3.0-draft;
       import wasi:http/handler@0.3.0-draft;
     ",
-    async: concurrent {
+    concurrent_imports: true,
+    async: {
         only_imports: [
             "wasi:http/types@0.3.0-draft#[static]body.finish",
             "wasi:http/handler@0.3.0-draft#handle",
@@ -27,7 +28,9 @@ use {
     std::{fmt, future::Future, mem},
     wasi::http::types::{ErrorCode, HeaderError, Method, RequestOptionsError, Scheme},
     wasmtime::{
-        component::{self, FutureReader, Linker, Resource, ResourceTable, StreamReader},
+        component::{
+            self, ErrorContext, FutureReader, Linker, Resource, ResourceTable, StreamReader,
+        },
         AsContextMut, StoreContextMut,
     },
 };
@@ -511,10 +514,7 @@ impl<T: WasiHttpView> wasi::http::types::Host for WasiHttpImpl<T>
 where
     T::Data: WasiHttpView,
 {
-    fn http_error_code(
-        &mut self,
-        _error: wasmtime::component::Error,
-    ) -> wasmtime::Result<Option<ErrorCode>> {
+    fn http_error_code(&mut self, _error: ErrorContext) -> wasmtime::Result<Option<ErrorCode>> {
         Err(anyhow!("todo: implement wasi:http/types#http-error-code"))
     }
 }

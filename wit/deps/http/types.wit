@@ -101,7 +101,7 @@ interface types {
   ///
   /// Note that this function is fallible because not all stream errors are
   /// http-related errors.
-  http-error-code: func(err: error) -> option<error-code>;
+  http-error-code: func(err: error-context) -> option<error-code>;
 
   /// This type enumerates the different kinds of errors that may occur when
   /// setting or appending to a `fields` resource.

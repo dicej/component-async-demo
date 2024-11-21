@@ -1,6 +1,5 @@
 #![deny(warnings)]
 
-#[allow(warnings)] // TODO: fix `wit-bindgen`-generated warnings so this isn't necessary
 mod bindings {
     wit_bindgen::generate!({
         path: "../wit",
@@ -16,7 +15,10 @@ mod bindings {
     export!(Component);
 }
 
-use bindings::{async_support, exports::local::local::baz::Guest as Baz, local::local::baz};
+use {
+    bindings::{exports::local::local::baz::Guest as Baz, local::local::baz},
+    wit_bindgen_rt::async_support,
+};
 
 struct Component;
 

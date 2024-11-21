@@ -24,7 +24,8 @@ mod round_trip {
         trappable_imports: true,
         path: "../wit",
         world: "round-trip",
-        async: concurrent
+        concurrent_imports: true,
+        async: true,
     });
 }
 
@@ -270,6 +271,9 @@ mod test {
                 definitions: vec![b_file.to_owned()],
                 ..Default::default()
             },
+            WasmFeatures::WASM2
+                | WasmFeatures::COMPONENT_MODEL
+                | WasmFeatures::COMPONENT_MODEL_ASYNC,
         )
         .compose()
     }
@@ -422,7 +426,8 @@ mod test {
         wasmtime::component::bindgen!({
             path: "../wit",
             world: "yield-host",
-            async: concurrent {
+            concurrent_imports: true,
+            async: {
                 only_imports: [
                     "local:local/ready#when-ready",
                 ]
@@ -542,7 +547,8 @@ mod test {
         wasmtime::component::bindgen!({
             path: "../wit",
             world: "wasi:http/proxy",
-            async: concurrent {
+            concurrent_imports: true,
+            async: {
                 only_imports: [
                     "wasi:http/types@0.3.0-draft#[static]body.finish",
                     "wasi:http/handler@0.3.0-draft#handle",

@@ -1,6 +1,5 @@
 #![deny(warnings)]
 
-#[allow(warnings)] // TODO: fix `wit-bindgen`-generated warnings so this isn't necessary
 mod bindings {
     wit_bindgen::generate!({
         path: "../wit",
@@ -22,11 +21,12 @@ mod bindings {
 
 use {
     bindings::{
-        async_support,
         exports::wasi::http::handler::Guest as Handler,
+        stream_and_future_support,
         wasi::http::types::{Body, ErrorCode, Request, Response},
     },
     futures::{SinkExt, StreamExt},
+    wit_bindgen_rt::async_support,
 };
 
 struct Component;
@@ -42,8 +42,8 @@ impl Handler for Component {
         } else {
             // ...but we do it the more difficult, less efficient way here to exercise various component model
             // features (e.g. `future`s, `stream`s, and post-return asynchronous execution):
-            let (trailers_tx, trailers_rx) = async_support::new_future();
-            let (mut pipe_tx, pipe_rx) = async_support::new_stream();
+            let (trailers_tx, trailers_rx) = stream_and_future_support::new_future();
+            let (mut pipe_tx, pipe_rx) = stream_and_future_support::new_stream();
 
             async_support::spawn(async move {
                 let mut body_rx = body.stream().unwrap();

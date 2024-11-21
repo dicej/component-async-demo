@@ -1,6 +1,5 @@
 #![deny(warnings)]
 
-#[allow(warnings)] // TODO: fix `wit-bindgen`-generated warnings so this isn't necessary
 mod bindings {
     wit_bindgen::generate!({
         path: "../wit",
@@ -22,8 +21,8 @@ mod bindings {
 
 use {
     bindings::{
-        async_support,
         exports::wasi::http::handler::Guest as Handler,
+        stream_and_future_support,
         wasi::http::{
             handler,
             types::{Body, ErrorCode, Headers, Request, Response},
@@ -35,6 +34,7 @@ use {
     },
     futures::{SinkExt, StreamExt},
     std::{io::Write, mem},
+    wit_bindgen_rt::async_support,
 };
 
 struct Component;
@@ -68,8 +68,8 @@ impl Handler for Component {
         let body = if content_deflated {
             // Next, spawn a task to pipe and decode the original request body and trailers into a new request
             // we'll create below.  This will run concurrently with any code in the imported `wasi:http/handler`.
-            let (trailers_tx, trailers_rx) = async_support::new_future();
-            let (mut pipe_tx, pipe_rx) = async_support::new_stream();
+            let (trailers_tx, trailers_rx) = stream_and_future_support::new_future();
+            let (mut pipe_tx, pipe_rx) = stream_and_future_support::new_stream();
 
             async_support::spawn(async move {
                 {
@@ -121,8 +121,8 @@ impl Handler for Component {
             // Spawn another task; this one is to pipe and encode the original response body and trailers into a
             // new response we'll create below.  This will run concurrently with the caller's code (i.e. it won't
             // necessarily complete before we return a value).
-            let (trailers_tx, trailers_rx) = async_support::new_future();
-            let (mut pipe_tx, pipe_rx) = async_support::new_stream();
+            let (trailers_tx, trailers_rx) = stream_and_future_support::new_future();
+            let (mut pipe_tx, pipe_rx) = stream_and_future_support::new_stream();
 
             async_support::spawn(async move {
                 {
