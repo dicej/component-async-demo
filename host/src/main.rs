@@ -12,7 +12,7 @@ use {
     },
     tokio::fs,
     wasmtime::{
-        component::{self, Component, Linker, ResourceTable},
+        component::{self, Component, Linker, PromisesUnordered, ResourceTable},
         Config, Engine, Store, StoreContextMut,
     },
     wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView},
@@ -25,6 +25,7 @@ mod round_trip {
         path: "../wit",
         world: "round-trip",
         concurrent_imports: true,
+        concurrent_exports: true,
         async: true,
     });
 }
@@ -120,12 +121,20 @@ async fn test_round_trip(component: &[u8], input: &str, expected_output: &str) -
     let round_trip =
         round_trip::RoundTrip::instantiate_async(&mut store, &component, &linker).await?;
 
-    let value = round_trip
-        .local_local_baz()
-        .call_foo(&mut store, input.to_owned())
-        .await?;
+    // Start three concurrent calls and then join them all:
+    let mut promises = PromisesUnordered::new();
+    for _ in 0..3 {
+        promises.push(
+            round_trip
+                .local_local_baz()
+                .call_foo(&mut store, input.to_owned())
+                .await?,
+        );
+    }
 
-    assert_eq!(expected_output, &value);
+    while let Some(value) = promises.next(&mut store).await? {
+        assert_eq!(expected_output, &value);
+    }
 
     Ok(())
 }
@@ -173,8 +182,11 @@ mod test {
         wasm_compose::composer::ComponentComposer,
         wasmparser::{Validator, WasmFeatures},
         wasmtime::{
-            component::{self, Component, Linker, Resource, ResourceTable},
-            AsContextMut, Config, Engine, Store, StoreContextMut,
+            component::{
+                self, Component, Linker, PromisesUnordered, Resource, ResourceTable, StreamReader,
+                StreamWriter,
+            },
+            Config, Engine, Store, StoreContextMut,
         },
         wasmtime_wasi::{WasiCtxBuilder, WasiView},
         wit_component::ComponentEncoder,
@@ -427,6 +439,7 @@ mod test {
             path: "../wit",
             world: "yield-host",
             concurrent_imports: true,
+            concurrent_exports: true,
             async: {
                 only_imports: [
                     "local:local/ready#when-ready",
@@ -518,7 +531,15 @@ mod test {
         let yield_host =
             yield_host::YieldHost::instantiate_async(&mut store, &component, &linker).await?;
 
-        yield_host.local_local_run().call_run(&mut store).await?;
+        // Start three concurrent calls and then join them all:
+        let mut promises = PromisesUnordered::new();
+        for _ in 0..3 {
+            promises.push(yield_host.local_local_run().call_run(&mut store).await?);
+        }
+
+        while let Some(()) = promises.next(&mut store).await? {
+            // continue
+        }
 
         Ok(())
     }
@@ -548,6 +569,7 @@ mod test {
             path: "../wit",
             world: "wasi:http/proxy",
             concurrent_imports: true,
+            concurrent_exports: true,
             async: {
                 only_imports: [
                     "wasi:http/types@0.3.0-draft#[static]body.finish",
@@ -628,35 +650,44 @@ mod test {
 
         let body = b"And the mome raths outgrabe";
 
-        let request_body_rx = {
-            let (mut request_body_tx, request_body_rx) = component::stream(&mut store)?;
+        enum Event {
+            RequestBodyWrite(StreamWriter<u8>),
+            RequestTrailersWrite,
+            Response(Result<Resource<Response>, ErrorCode>),
+            ResponseBodyRead(Option<(StreamReader<u8>, Vec<u8>)>),
+            ResponseTrailersRead(Option<Resource<Fields>>),
+        }
 
-            request_body_tx.write(
-                &mut store,
-                if use_compression {
-                    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::fast());
-                    encoder.write_all(body)?;
-                    encoder.finish()?
-                } else {
-                    body.to_vec()
-                },
-            )?;
-            request_body_tx.close(&mut store)?;
+        let mut promises = PromisesUnordered::new();
 
-            request_body_rx
-        };
+        let (request_body_tx, request_body_rx) = component::stream(&mut store)?;
+
+        promises.push(
+            request_body_tx
+                .write(
+                    &mut store,
+                    if use_compression {
+                        let mut encoder = DeflateEncoder::new(Vec::new(), Compression::fast());
+                        encoder.write_all(body)?;
+                        encoder.finish()?
+                    } else {
+                        body.to_vec()
+                    },
+                )?
+                .map(Event::RequestBodyWrite),
+        );
 
         let trailers = vec![("fizz".into(), b"buzz".into())];
 
-        let request_trailers_rx = {
-            let (request_trailers_tx, request_trailers_rx) = component::future(&mut store)?;
+        let (request_trailers_tx, request_trailers_rx) = component::future(&mut store)?;
 
-            let trailers = WasiView::table(store.data_mut()).push(Fields(trailers.clone()))?;
+        let request_trailers = WasiView::table(store.data_mut()).push(Fields(trailers.clone()))?;
 
-            request_trailers_tx.write(&mut store, trailers)?;
-
-            request_trailers_rx
-        };
+        promises.push(
+            request_trailers_tx
+                .write(&mut store, request_trailers)?
+                .map(|()| Event::RequestTrailersWrite),
+        );
 
         let request = WasiView::table(store.data_mut()).push(Request {
             method: Method::Post,
@@ -684,62 +715,90 @@ mod test {
             options: None,
         })?;
 
-        let response = proxy
-            .wasi_http_handler()
-            .call_handle(&mut store, request)
-            .await?;
-
-        let mut response = WasiView::table(store.data_mut()).delete(response?)?;
-
-        assert!(response.status_code == 200);
-
-        assert!(headers.iter().all(|(k0, v0)| response
-            .headers
-            .0
-            .iter()
-            .any(|(k1, v1)| k0 == k1 && v0 == v1)));
-
-        let mut response_body_rx = response.body.stream.take().unwrap();
+        promises.push(
+            proxy
+                .wasi_http_handler()
+                .call_handle(&mut store, request)
+                .await?
+                .map(Event::Response),
+        );
 
         let mut response_body = Vec::new();
-        loop {
-            let rx = response_body_rx.read(&mut store)?;
-            if let Ok(chunk) = store.as_context_mut().wait_until(rx).await? {
-                response_body.extend(chunk.unwrap());
-            } else {
-                break;
+        let mut response_trailers = None;
+        let mut received_trailers = false;
+        while let Some(event) = promises.next(&mut store).await? {
+            match event {
+                Event::RequestBodyWrite(tx) => tx.close(&mut store)?,
+                Event::RequestTrailersWrite => {}
+                Event::Response(response) => {
+                    let mut response = WasiView::table(store.data_mut()).delete(response?)?;
+
+                    assert!(response.status_code == 200);
+
+                    assert!(headers.iter().all(|(k0, v0)| response
+                        .headers
+                        .0
+                        .iter()
+                        .any(|(k1, v1)| k0 == k1 && v0 == v1)));
+
+                    if use_compression {
+                        assert!(response.headers.0.iter().any(|(k, v)| matches!(
+                            (k.as_str(), v.as_slice()),
+                            ("content-encoding", b"deflate")
+                        )));
+                    }
+
+                    response_trailers = response.body.trailers.take();
+
+                    promises.push(
+                        response
+                            .body
+                            .stream
+                            .take()
+                            .unwrap()
+                            .read(&mut store)?
+                            .map(Event::ResponseBodyRead),
+                    );
+                }
+                Event::ResponseBodyRead(Some((rx, chunk))) => {
+                    response_body.extend(chunk);
+                    promises.push(rx.read(&mut store)?.map(Event::ResponseBodyRead));
+                }
+                Event::ResponseBodyRead(None) => {
+                    let response_body = if use_compression {
+                        let mut decoder = DeflateDecoder::new(Vec::new());
+                        decoder.write_all(&response_body)?;
+                        decoder.finish()?
+                    } else {
+                        response_body.clone()
+                    };
+
+                    assert_eq!(body as &[_], &response_body);
+
+                    promises.push(
+                        response_trailers
+                            .take()
+                            .unwrap()
+                            .read(&mut store)?
+                            .map(Event::ResponseTrailersRead),
+                    );
+                }
+                Event::ResponseTrailersRead(Some(response_trailers)) => {
+                    let response_trailers =
+                        WasiView::table(store.data_mut()).delete(response_trailers)?;
+
+                    assert!(trailers.iter().all(|(k0, v0)| response_trailers
+                        .0
+                        .iter()
+                        .any(|(k1, v1)| k0 == k1 && v0 == v1)));
+
+                    received_trailers = true;
+                }
+                Event::ResponseTrailersRead(None) => panic!("expected response trailers; got none"),
             }
         }
 
-        let response_body = if use_compression {
-            assert!(response.headers.0.iter().any(|(k, v)| matches!(
-                (k.as_str(), v.as_slice()),
-                ("content-encoding", b"deflate")
-            )));
-
-            let mut decoder = DeflateDecoder::new(Vec::new());
-            decoder.write_all(&response_body)?;
-            decoder.finish()?
-        } else {
-            response_body
-        };
-
-        assert_eq!(body as &[_], &response_body);
-
-        let response_trailers = response.body.trailers.take().unwrap().read(&mut store)?;
-
-        let response_trailers = store
-            .as_context_mut()
-            .wait_until(response_trailers)
-            .await??
-            .unwrap();
-
-        let response_trailers = WasiView::table(store.data_mut()).delete(response_trailers)?;
-
-        assert!(trailers.iter().all(|(k0, v0)| response_trailers
-            .0
-            .iter()
-            .any(|(k1, v1)| k0 == k1 && v0 == v1)));
+        assert!(received_trailers);
 
         Ok(())
     }

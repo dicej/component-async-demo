@@ -263,11 +263,13 @@ where
            + 'static {
         let trailers = (|| {
             let trailers = store.data_mut().table().delete(this)?.trailers;
-            trailers.map(|v| v.read(store.as_context_mut())).transpose()
+            trailers
+                .map(|v| v.read(store.as_context_mut()).map(|v| v.into_future()))
+                .transpose()
         })();
         async move {
             let trailers = match trailers {
-                Ok(Some(trailers)) => Ok(trailers.await.unwrap_or_default()),
+                Ok(Some(trailers)) => Ok(trailers.await),
                 Ok(None) => Ok(None),
                 Err(e) => Err(e),
             };
