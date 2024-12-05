@@ -61,6 +61,8 @@ pub trait WasiHttpView: Send + Sized {
         Output = impl FnOnce(
             StoreContextMut<'_, Self::Data>,
         ) -> wasmtime::Result<Result<Resource<Response>, ErrorCode>>
+                     + Send
+                     + Sync
                      + 'static,
     > + Send
            + Sync
@@ -81,6 +83,8 @@ impl<T: WasiHttpView> WasiHttpView for &mut T {
         Output = impl FnOnce(
             StoreContextMut<'_, Self::Data>,
         ) -> wasmtime::Result<Result<Resource<Response>, ErrorCode>>
+                     + Send
+                     + Sync
                      + 'static,
     > + Send
            + Sync
@@ -105,6 +109,8 @@ impl<T: WasiHttpView> WasiHttpView for WasiHttpImpl<T> {
         Output = impl FnOnce(
             StoreContextMut<'_, Self::Data>,
         ) -> wasmtime::Result<Result<Resource<Response>, ErrorCode>>
+                     + Send
+                     + Sync
                      + 'static,
     > + Send
            + Sync
@@ -531,6 +537,8 @@ impl<T: WasiHttpView> wasi::http::handler::Host for WasiHttpImpl<T> {
         Output = impl FnOnce(
             StoreContextMut<'_, Self::Data>,
         ) -> wasmtime::Result<Result<Resource<Response>, ErrorCode>>
+                     + Send
+                     + Sync
                      + 'static,
     > + Send
            + Sync

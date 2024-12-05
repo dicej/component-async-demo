@@ -2,6 +2,7 @@
 
 mod bindings {
     wit_bindgen::generate!({
+        debug: true,
         path: "../wit",
         world: "wasi:http/proxy",
         async: {

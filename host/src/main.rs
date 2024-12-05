@@ -262,7 +262,7 @@ mod test {
                 | WasmFeatures::COMPONENT_MODEL_ASYNC,
         )
         .validate_all(&component)
-        .context("failed to validated component output")?;
+        .context("failed to validate component output")?;
 
         Ok(component)
     }
@@ -562,6 +562,13 @@ mod test {
         let backpressure_caller = &build_rust_component("backpressure_caller").await?;
         let backpressure_callee = &build_rust_component("backpressure_callee").await?;
         test_run(&compose(backpressure_caller, backpressure_callee).await?).await
+    }
+
+    #[tokio::test]
+    async fn cancel() -> Result<()> {
+        let cancel_caller = &build_rust_component("cancel_caller").await?;
+        let cancel_callee = &build_rust_component("cancel_callee").await?;
+        test_run(&compose(cancel_caller, cancel_callee).await?).await
     }
 
     mod proxy {

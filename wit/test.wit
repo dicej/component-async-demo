@@ -27,6 +27,20 @@ interface backpressure {
   set-backpressure: func(enabled: bool);
 }
 
+interface cancel {
+  variant control {
+    read-stream(string),
+    read-future(string),
+    write-stream(string),
+    write-future(string),
+  }
+  
+  exchange: func(control: stream<control>,
+                 caller-stream: stream<string>,
+                 caller-future1: future<string>,
+                 caller-future2: future<string>) -> tuple<stream<string>, future<string>, future<string>>;
+}
+
 world yield-caller {
   import continue;
   import ready;
@@ -60,3 +74,13 @@ world backpressure-callee {
   export backpressure;
   export run;
 }
+
+world cancel-caller {
+  import cancel;
+  export run;
+}
+
+world cancel-callee {
+  export cancel;
+}
+
