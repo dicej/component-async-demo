@@ -3,10 +3,10 @@
 mod bindings {
     wit_bindgen::generate!({
         path: "../wit",
-        world: "cancel-callee",
+        world: "transmit-callee",
         async: {
             exports: [
-                "local:local/cancel#exchange",
+                "local:local/transmit#exchange",
             ],
         }
     });
@@ -17,7 +17,7 @@ mod bindings {
 
 use {
     bindings::{
-        exports::local::local::cancel::{Control, Guest},
+        exports::local::local::transmit::{Control, Guest},
         stream_and_future_support::{self, FutureReader, StreamReader},
     },
     futures::{SinkExt, StreamExt},

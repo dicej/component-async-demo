@@ -3,10 +3,10 @@
 mod bindings {
     wit_bindgen::generate!({
         path: "../wit",
-        world: "cancel-caller",
+        world: "transmit-caller",
         async: {
             imports: [
-                "local:local/cancel#exchange",
+                "local:local/transmit#exchange",
             ],
             exports: [
                 "local:local/run#run",
@@ -21,7 +21,7 @@ mod bindings {
 use {
     bindings::{
         exports::local::local::run::Guest,
-        local::local::cancel::{self, Control},
+        local::local::transmit::{self, Control},
         stream_and_future_support,
     },
     futures::{future, FutureExt, SinkExt, StreamExt},
@@ -41,7 +41,7 @@ impl Guest for Component {
         let (mut caller_future_tx1, caller_future_rx1) = stream_and_future_support::new_future();
         let (caller_future_tx2, caller_future_rx2) = stream_and_future_support::new_future();
 
-        let (mut callee_stream_rx, mut callee_future_rx1, callee_future_rx2) = cancel::exchange(
+        let (mut callee_stream_rx, mut callee_future_rx1, callee_future_rx2) = transmit::exchange(
             control_rx,
             caller_stream_rx,
             caller_future_rx1,

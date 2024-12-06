@@ -27,7 +27,7 @@ interface backpressure {
   set-backpressure: func(enabled: bool);
 }
 
-interface cancel {
+interface transmit {
   variant control {
     read-stream(string),
     read-future(string),
@@ -75,12 +75,12 @@ world backpressure-callee {
   export run;
 }
 
-world cancel-caller {
-  import cancel;
+world transmit-caller {
+  import transmit;
   export run;
 }
 
-world cancel-callee {
-  export cancel;
+world transmit-callee {
+  export transmit;
 }
 

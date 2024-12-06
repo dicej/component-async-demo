@@ -13,6 +13,6 @@ members = [
   "poll",  
   "yield-callee",
   "yield-caller",
-  "cancel-callee",
-  "cancel-caller",
+  "transmit-callee",
+  "transmit-caller",
 ]
