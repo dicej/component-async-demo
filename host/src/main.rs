@@ -1,7 +1,7 @@
 #![deny(warnings)]
 
 use {
-    anyhow::Result,
+    anyhow::{anyhow, Result},
     clap::{Parser, Subcommand},
     std::{
         future::Future,
@@ -12,7 +12,7 @@ use {
     },
     tokio::fs,
     wasmtime::{
-        component::{self, Component, Linker, PromisesUnordered, ResourceTable},
+        component::{self, Component, Linker, PromisesUnordered, ResourceTable, Val},
         Config, Engine, Store, StoreContextMut,
     },
     wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView},
@@ -100,40 +100,98 @@ async fn test_round_trip(component: &[u8], input: &str, expected_output: &str) -
 
     let engine = Engine::new(&config)?;
 
+    let make_store = || {
+        Store::new(
+            &engine,
+            Ctx {
+                wasi: WasiCtxBuilder::new().inherit_stdio().build(),
+                table: ResourceTable::default(),
+                drop_count: 0,
+                continue_: false,
+                wakers: Arc::new(Mutex::new(None)),
+            },
+        )
+    };
+
     let component = Component::new(&engine, component)?;
 
-    let mut linker = Linker::new(&engine);
+    // First, test the `wasmtime-wit-bindgen` static API:
+    {
+        let mut linker = Linker::new(&engine);
 
-    wasmtime_wasi::add_to_linker_async(&mut linker)?;
-    round_trip::RoundTrip::add_to_linker(&mut linker, |ctx| ctx)?;
+        wasmtime_wasi::add_to_linker_async(&mut linker)?;
+        round_trip::RoundTrip::add_to_linker(&mut linker, |ctx| ctx)?;
 
-    let mut store = Store::new(
-        &engine,
-        Ctx {
-            wasi: WasiCtxBuilder::new().inherit_stdio().build(),
-            table: ResourceTable::default(),
-            drop_count: 0,
-            continue_: false,
-            wakers: Arc::new(Mutex::new(None)),
-        },
-    );
+        let mut store = make_store();
 
-    let round_trip =
-        round_trip::RoundTrip::instantiate_async(&mut store, &component, &linker).await?;
+        let round_trip =
+            round_trip::RoundTrip::instantiate_async(&mut store, &component, &linker).await?;
 
-    // Start three concurrent calls and then join them all:
-    let mut promises = PromisesUnordered::new();
-    for _ in 0..3 {
-        promises.push(
-            round_trip
-                .local_local_baz()
-                .call_foo(&mut store, input.to_owned())
-                .await?,
-        );
+        // Start three concurrent calls and then join them all:
+        let mut promises = PromisesUnordered::new();
+        for _ in 0..3 {
+            promises.push(
+                round_trip
+                    .local_local_baz()
+                    .call_foo(&mut store, input.to_owned())
+                    .await?,
+            );
+        }
+
+        while let Some(value) = promises.next(&mut store).await? {
+            assert_eq!(expected_output, &value);
+        }
     }
 
-    while let Some(value) = promises.next(&mut store).await? {
-        assert_eq!(expected_output, &value);
+    // Now do it again using the dynamic API (except for WASI, where we stick with the static API):
+    {
+        let mut linker = Linker::new(&engine);
+
+        wasmtime_wasi::add_to_linker_async(&mut linker)?;
+        linker
+            .root()
+            .instance("local:local/baz")?
+            .func_new_concurrent("foo", |_, params| async move {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                component::for_any(move |_: StoreContextMut<'_, Ctx>| {
+                    let Some(Val::String(s)) = params.into_iter().next() else {
+                        unreachable!()
+                    };
+                    Ok(vec![Val::String(format!(
+                        "{s} - entered host - exited host"
+                    ))])
+                })
+            })?;
+
+        let mut store = make_store();
+
+        let instance = linker.instantiate_async(&mut store, &component).await?;
+        let baz_instance = instance
+            .get_export(&mut store, None, "local:local/baz")
+            .ok_or_else(|| anyhow!("can't find `local:local/baz` in instance"))?;
+        let foo_function = instance
+            .get_export(&mut store, Some(&baz_instance), "foo")
+            .ok_or_else(|| anyhow!("can't find `foo` in instance"))?;
+        let foo_function = instance
+            .get_func(&mut store, foo_function)
+            .ok_or_else(|| anyhow!("can't find `foo` in instance"))?;
+
+        // Start three concurrent calls and then join them all:
+        let mut promises = PromisesUnordered::new();
+        for _ in 0..3 {
+            promises.push(
+                foo_function
+                    .call_concurrent(&mut store, vec![Val::String(input.to_owned())])
+                    .await?,
+            );
+        }
+
+        while let Some(value) = promises.next(&mut store).await? {
+            let Some(Val::String(value)) = value.into_iter().next() else {
+                unreachable!()
+            };
+            assert_eq!(expected_output, &value);
+        }
     }
 
     Ok(())
