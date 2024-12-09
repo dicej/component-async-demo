@@ -4,6 +4,7 @@ members = [
   "backpressure-callee",
   "backpressure-caller",  
   "guest-async",
+  "guest-async-stackful",  
   "guest-sync",
   "guest-wait",
   "http-echo",

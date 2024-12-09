@@ -1,0 +1,11 @@
+[package]
+name = "guest-async-stackful"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+futures = "0.3.30"
+once_cell = "1.19.0"
+
+[lib]
+crate-type = ["cdylib"]

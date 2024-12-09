@@ -370,6 +370,16 @@ mod test {
     }
 
     #[tokio::test]
+    async fn guest_async_stackful() -> Result<()> {
+        test_round_trip(
+            &build_rust_component("guest_async_stackful").await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered host - exited host - exited guest",
+        )
+        .await
+    }
+
+    #[tokio::test]
     async fn guest_async_async() -> Result<()> {
         let guest_async = &build_rust_component("guest_async").await?;
         test_round_trip(
@@ -486,6 +496,70 @@ mod test {
         let guest_async = &build_rust_component("guest_async").await?;
         test_round_trip(
             &compose(guest_wait, guest_async).await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered guest - entered host \
+             - exited host - exited guest - exited guest",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn guest_async_stackful_async_stackful() -> Result<()> {
+        let guest_async_stackful = &build_rust_component("guest_async_stackful").await?;
+        test_round_trip(
+            &compose(guest_async_stackful, guest_async_stackful).await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered guest - entered host \
+             - exited host - exited guest - exited guest",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn guest_async_stackful_async() -> Result<()> {
+        let guest_async_stackful = &build_rust_component("guest_async_stackful").await?;
+        let guest_async = &build_rust_component("guest_async").await?;
+        test_round_trip(
+            &compose(guest_async_stackful, guest_async).await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered guest - entered host \
+             - exited host - exited guest - exited guest",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn guest_async_async_stackful() -> Result<()> {
+        let guest_async = &build_rust_component("guest_async").await?;
+        let guest_async_stackful = &build_rust_component("guest_async_stackful").await?;
+        test_round_trip(
+            &compose(guest_async, guest_async_stackful).await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered guest - entered host \
+             - exited host - exited guest - exited guest",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn guest_async_stackful_sync() -> Result<()> {
+        let guest_async_stackful = &build_rust_component("guest_async_stackful").await?;
+        let guest_sync = &build_rust_component("guest_sync").await?;
+        test_round_trip(
+            &compose(guest_async_stackful, guest_sync).await?,
+            "hello, world!",
+            "hello, world! - entered guest - entered guest - entered host \
+             - exited host - exited guest - exited guest",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn guest_sync_async_stackful() -> Result<()> {
+        let guest_sync = &build_rust_component("guest_sync").await?;
+        let guest_async_stackful = &build_rust_component("guest_async_stackful").await?;
+        test_round_trip(
+            &compose(guest_sync, guest_async_stackful).await?,
             "hello, world!",
             "hello, world! - entered guest - entered guest - entered host \
              - exited host - exited guest - exited guest",
@@ -649,17 +723,20 @@ mod test {
             component: &Component,
             linker: &Linker<Ctx>,
         ) -> Result<Self::Instance>;
+
         async fn call(
             store: impl AsContextMut<Data = Ctx>,
             instance: &Self::Instance,
             params: Self::Params,
         ) -> Result<Promise<Self::Result>>;
+
         fn into_params(
             control: StreamReader<Control>,
             caller_stream: StreamReader<String>,
             caller_future1: FutureReader<String>,
             caller_future2: FutureReader<String>,
         ) -> Self::Params;
+
         fn from_result(
             store: impl AsContextMut<Data = Ctx>,
             result: Self::Result,
@@ -850,11 +927,11 @@ mod test {
         let (caller_future1_tx, caller_future1_rx) = component::future(&mut store)?;
         let (_caller_future2_tx, caller_future2_rx) = component::future(&mut store)?;
 
+        let mut promises = PromisesUnordered::<Event<Test>>::new();
         let mut caller_future1_tx = Some(caller_future1_tx);
         let mut callee_stream_rx = None;
         let mut callee_future1_rx = None;
-
-        let mut promises = PromisesUnordered::<Event<Test>>::new();
+        let mut complete = false;
 
         promises.push(
             control_tx
@@ -883,7 +960,6 @@ mod test {
             .map(Event::Result),
         );
 
-        let mut complete = false;
         while let Some(event) = promises.next(&mut store).await? {
             match event {
                 Event::Result(result) => {
