@@ -1,3 +1,5 @@
+# NOTICE: This repository is no longer being maintained.  The `wit-bindgen` and `wasm-tools` changes have been upstreamed, and the `wasmtime` changes are [on their way upstream](https://github.com/bytecodealliance/wasmtime/pull/9582).
+
 # component-async-demo
 
 This is a demonstration of experimental async lift/lower, `future`, and `stream`
